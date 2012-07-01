@@ -9,8 +9,6 @@ import urllib
 
 import imapclient
 
-dry_run = False
-
 def print_mail_info(_id, header):
     import email
     import re
@@ -149,6 +147,7 @@ def main():
     filename = sys.argv[sys.argv.index('--auth')+1] if len(sys.argv) > 2 and '--auth' in sys.argv else None
     username = sys.argv[sys.argv.index('--user')+1] if len(sys.argv) > 2 and '--user' in sys.argv else None
     do_archive = '--archive' in sys.argv
+    do_print   = '--print' in sys.argv
 
     # login
     username = username or raw_input('Username: ')
@@ -158,26 +157,22 @@ def main():
     login(server, username, filename)
     print 'logged in with', username
 
-    # list
+	# list: SEEN, BEFORE "1 week ago", LABEL "Inbox"
     folders = server.xlist_folders() 
     allmail_name = [folderinfo for folderinfo in folders if r"\AllMail" in folderinfo[0]][0][-1]
     server.select_folder(allmail_name)
     msgids = server.search(['SEEN', 'BEFORE %s' % WEEK_AGO.strftime("%d-%b-%Y"), r'X-GM-LABELS "\\Inbox"'])
     print len(msgids), 'read messages', 'since', WEEK_AGO.strftime("%d-%b-%Y")
 
-    # filter
+	# filter: len(LABEL) > 1
     msgs_with_labels = server.get_gmail_labels(msgids)
     labled_msgs = [msgid for (msgid, labels) in msgs_with_labels.iteritems() if len(labels) > 1]
-    #labled_msgs = [msgid for (msgid, labels) in msgs_with_labels.items()[:3]]
     print len(labled_msgs), 'labeled messages'
 
     # print
-    if len(labled_msgs) <= 30:
-        #result = server.fetch(labled_msgs, ['BODY[HEADER.FIELDS (SUBJECT FROM DATE)]'])
+    if do_print:
         fields = ['BODY[HEADER.FIELDS (SUBJECT)]', 'BODY[HEADER.FIELDS (FROM)]', 'BODY[HEADER.FIELDS (DATE)]']
-        result = server.fetch(labled_msgs, fields)
-        for _id, mail in result.iteritems():
-            #print_mail_info(_id, mail['BODY[HEADER.FIELDS (SUBJECT FROM DATE)]'])
+        for _id, mail in server.fetch(labled_msgs, fields).iteritems():
             header = '\n'.join(mail[f].strip().replace('\n', '').replace('\r', '') for f in fields)
             print_mail_info(_id, header)
 
