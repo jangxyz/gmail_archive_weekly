@@ -1,10 +1,12 @@
 #!/usr/bin/python
 # -*- coding: utf8 -*-
 
+import sys
 import imapclient
 import getpass
 import datetime
 from email.header import decode_header
+import urllib
 
 def print_mail_info(_id, header):
     import email
@@ -29,6 +31,105 @@ def print_mail_info(_id, header):
     print '[%(Date)s] %(From)s  =>  "%(Subject)s"' % header_dict
 
 
+def login(server, email, auth_file=None):
+    if auth_file:
+        try:
+            return login_by_oauth(server, email, auth_file)
+        except:
+            print 'failed logging with oauth.'
+
+    # no oauth.
+    yn = raw_input('Do you want to login via OAuth and save for later (Y/n)? ')
+    if yn.upper() == 'N':
+        return login_by_password(server, email)
+    else:
+        filename = '.oauth'
+        save_oauth(email, filename)
+        prog_name = sys.argv[0]
+        print 'saved to %(filename)s . run `%(prog_name)s %(filename)s` next time to login by oauth' % locals()
+        print
+        return login_by_oauth(server, email, filename)
+
+
+def login_by_password(server, email):
+    password = getpass.getpass('Password: ' )
+    server.login(email, password)
+    del password
+
+def login_by_oauth(server, email, filename):
+    url = 'https://mail.google.com/mail/b/%s/imap/' % email
+    token, secret = open(filename).read().split()
+    server.oauth_login(url, token, secret)
+
+def save_oauth(email, filename):
+    import xoauth
+    import time
+    import random
+    escape = lambda text: urllib.quote(text, safe='~-._')
+
+    # Get Request Token
+    #request_token = GenerateRequestToken(consumer, scope, nonce, timestamp, google_accounts_url_generator)
+    REQUEST_URL = 'https://www.google.com/accounts/OAuthGetRequestToken'
+    SCOPE       = 'https://mail.google.com/'
+    CONSUMER    = ('anonymous', 'anonymous')
+    params = {
+        'oauth_consumer_key'    : CONSUMER[0],
+        'oauth_nonce'           : str(random.randrange(2**64 - 1)),
+        'oauth_signature_method': 'HMAC-SHA1',
+        'oauth_version'         : '1.0',
+        'oauth_timestamp'       : str(int(time.time())),
+        'oauth_callback'        : 'oob',
+        'scope'                 : SCOPE,
+    }
+    base_string = '&'.join([escape(x) for x in ['GET', REQUEST_URL, urllib.urlencode(sorted(params.items()))]])
+    params['oauth_signature'] = xoauth.GenerateOauthSignature(base_string, CONSUMER[1], '')
+
+    url = '%s?%s' % (REQUEST_URL, urllib.urlencode(params))
+    response = urllib.urlopen(url).read()
+    response_params = xoauth.ParseUrlParamString(response)
+    #for param in response_params.items():
+    #    print '%s: %s' % param
+    REQUEST_TOKEN = (response_params['oauth_token'], response_params['oauth_token_secret'])
+    print
+    print 'To authorize token, visit this url and follow the directions to generate a verification code:'
+    print '  https://www.google.com/accounts/OAuthAuthorizeToken?oauth_token=%s' % (escape(REQUEST_TOKEN[0]))
+
+    # Get Access Token
+    #access_token = GetAccessToken(consumer, request_token, oauth_verifier, google_accounts_url_generator)
+    REQUEST_URL =  'https://www.google.com/accounts/OAuthGetAccessToken'
+    oauth_verifier = raw_input('Enter verification code: ').strip()
+
+    params = {
+        'oauth_consumer_key'    : CONSUMER[0],
+        'oauth_nonce'           : str(random.randrange(2**64 - 1)),
+        'oauth_signature_method': 'HMAC-SHA1',
+        'oauth_version'         : '1.0',
+        'oauth_timestamp'       : str(int(time.time())),
+        'oauth_token'           : REQUEST_TOKEN[0],
+        'oauth_verifier'        : oauth_verifier,
+    }
+    base_string = '&'.join([escape(x) for x in ['GET', REQUEST_URL, urllib.urlencode(sorted(params.items()))]])
+    params['oauth_signature'] = xoauth.GenerateOauthSignature(base_string, CONSUMER[1], REQUEST_TOKEN[1])
+
+    url = '%s?%s' % (REQUEST_URL, urllib.urlencode(sorted(params.items())))
+    response = urllib.urlopen(url).read()
+    response_params = xoauth.ParseUrlParamString(response)
+    #for param in ('oauth_token', 'oauth_token_secret'):
+    #    print '%s: %s' % (param, response_params[param])
+    access_token = (response_params['oauth_token'], response_params['oauth_token_secret'])
+
+    # save to file
+    if hasattr(filename, 'write') and hasattr(filename, 'close'):
+        f = filename
+    else:
+        f = open(filename, 'w')
+
+    f.write(access_token[0] + "\n")
+    f.write(access_token[1])
+    f.close()
+    return filename
+
+
 def main():
     '''
         1. login
@@ -42,10 +143,10 @@ def main():
     # login
     username = raw_input('Username: ')
     username = username + '@gmail.com' if '@' not in username else ''
-    password = getpass.getpass('Password: ' )
     server = imapclient.IMAPClient('imap.gmail.com', ssl=True)
-    server.login(username, password)
-    del password
+    #server.login(email, getpass.getpass('Password: ' )) # deprecated.
+    filename = sys.argv[1] if len(sys.argv) > 1 else None
+    login(server, username, filename)
     print 'logged in with', username
 
     # list
