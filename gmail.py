@@ -4,6 +4,8 @@
 import imaplib
 import re
 import shlex
+import imapclient
+import getpass
 
 # register 'imap4-utf-7' codec
 from imapUTF7 import register_codec
@@ -15,6 +17,7 @@ class GMAIL_IMAP4_SSL(imaplib.IMAP4_SSL):
     pass
 ###
  
+IMAP_SERVER = 'imap.gmail.com'
 
 class Gmail:
     def __init__(self):
@@ -90,7 +93,6 @@ def extract_id(response):
 
 
 def do_login(username=None):
-    import getpass
     if username is None:
         username = raw_input('Username: ')
     password = getpass.getpass('Password: ' )
@@ -312,6 +314,27 @@ def test():
 
     # archive
     #g.M.store(msg, '-X-GM-LABELS', r'\Inbox')
+
+
+    # login
+    username = raw_input('Username: ')
+    password = getpass.getpass('Password: ' )
+    server = imapclient.IMAPClient(IMAP_SERVER, ssl=True)
+    server.login(username, password)
+    del password
+
+    # list
+    server.select_folder(u'[Gmail]/전체보관함')
+    msgids = server.search(['SEEN', 'SINCE %s' % week_ago.strftime("%d-%b-%Y"), r'X-GM-LABELS "\\Inbox"'])
+
+    # print
+    for _id, mail in server.fetch(msgids, ['BODY[HEADER.FIELDS (SUBJECT)]']).iteritems():
+        print _id, mail['BODY[HEADER.FIELDS (SUBJECT)]'].replace("\r", "").replace("\n", "")
+
+    # archive
+    #server.remove_gmail_labels(msgids, r"\Inbox")
+
+
 
 
 if __name__ == '__main__':
