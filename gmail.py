@@ -1,4 +1,6 @@
 #!/usr/bin/python
+# -*- coding: utf8 -*-
+
 import imaplib
 import re
 import shlex
@@ -58,10 +60,33 @@ class Gmail:
         return unreadCount
 
     #
-    def labels(self, single_mailid):
+    def _label(self, single_mailid):
         rc, self.response = self.M.fetch(single_mailid, 'X-GM-LABELS')
-        strip_label_str = self.response[0].split('X-GM-LABELS (', 1)[1].rsplit(')')[0]
-        return [x.decode('imap4-utf-7') for x in shlex.split(strip_label_str)]
+
+    def labels(self, single_mailid):
+        self._label(single_mailid)
+        strip_label_str = extract_label(self.response[0])
+        return shlex.split(strip_label_str.decode('imap4-utf-7'))
+
+    def group_labels(self, mailids):
+        result = {}
+        print len(squeeze_sequence_set(mailids)), 'message sets'
+        for message_set in squeeze_sequence_set(mailids):
+            self._label(message_set)
+            msg_labels = [(extract_id(r), extract_label(r)) for r in self.response]
+            msg_labels = [(_id, shlex.split(l)) for (_id, l) in msg_labels]
+
+            for _id, labels in msg_labels:
+                result[_id] = [l.decode('imap4-utf-7') for l in labels]
+
+        return result
+
+
+def extract_label(response):
+    return response.split('X-GM-LABELS (')[1].rsplit(')')[0] 
+
+def extract_id(response):
+    return response.split(' ', 1)[0]
 
 
 def do_login(username=None):
@@ -100,9 +125,13 @@ def squeeze_sequence_set(sequence_set):
         if number == sequence_set[i]+1:
             group_last_number = number
         else:
-            result.append( '%d:%d' % (group_start_number, group_last_number) )
+            if not group_last_number:   msgid = str(group_start_number)
+            else:                       msgid = '%d:%d' % (group_start_number, group_last_number)
+            result.append( msgid )
             group_start_number, group_last_number = number, None
-    result.append( '%d:%d' % (group_start_number, group_last_number) )
+    if not group_last_number:   msgid = str(group_start_number)
+    else:                       msgid = '%d:%d' % (group_start_number, group_last_number)
+    result.append( msgid )
 
     return result
 
@@ -260,20 +289,29 @@ def search(msgid, **options):
 
 def test():
     g = do_login()
-    g.M.select('inbox')
-    # search read articles with label
+    #g.M.select('inbox')
+    g.M.select(u'[Gmail]/전체보관함'.encode('imap4-utf-7'))
+
+    # search read articles
     import datetime
     week_ago = datetime.datetime.now() - datetime.timedelta(days=7)
-    #typ, data = g.M.search('', 'SEEN', 'BEFORE', week_ago.strftime("%d-%b-%Y"))
-    typ, data = g.M.search('', 'SEEN', 'SINCE', week_ago.strftime("%d-%b-%Y"))
+    typ, data = g.M.search('', 'SEEN', 'BEFORE', week_ago.strftime("%d-%b-%Y"), 'X-GM-LABELS', r'\Inbox')
+    #typ, data = g.M.search('', 'SEEN', 'SINCE', week_ago.strftime("%d-%b-%Y"))
     messages = data[0].split()
-
     print 'read', len(messages), 'mails from', week_ago
-    labeled_messages = [msg for msg in messages if len(g.labels(msg)) > 1]
-    print len(labeled_messages), 'mails labled'
+
+    # filter labled messages (NB: slow)
+    #labeled_messages = [msg for msg in messages if len(g.labels(msg)) > 1]
+    #print len(labeled_messages), 'mails labled'
+    labeled_messages = [_id for (_id, labels) in g.group_labels(messages).iteritems() if len(labels) > 1]
+
+    # print subject
     for msg in labeled_messages:
         typ, data = g.M.fetch(msg, '(BODY[HEADER.FIELDS (SUBJECT)])')
         print data[0][1].strip()
+
+    # archive
+    #g.M.store(msg, '-X-GM-LABELS', r'\Inbox')
 
 
 if __name__ == '__main__':
