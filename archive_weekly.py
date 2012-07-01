@@ -2,11 +2,12 @@
 # -*- coding: utf8 -*-
 
 import sys
-import imapclient
 import getpass
 import datetime
 from email.header import decode_header
 import urllib
+
+import imapclient
 
 def print_mail_info(_id, header):
     import email
@@ -35,8 +36,9 @@ def login(server, email, auth_file=None):
     if auth_file:
         try:
             return login_by_oauth(server, email, auth_file)
-        except:
-            print 'failed logging with oauth.'
+        except Exception as e:
+            print 'failed loggin in by oauth:'
+            print e
 
     # no oauth.
     yn = raw_input('Do you want to login via OAuth and save for later (Y/n)? ')
@@ -62,6 +64,7 @@ def login_by_oauth(server, email, filename):
     server.oauth_login(url, token, secret)
 
 def save_oauth(email, filename):
+    # shamelessly copied from http://google-mail-xoauth-tools.googlecode.com/svn/trunk/python/xoauth.py
     import xoauth
     import time
     import random
@@ -134,18 +137,21 @@ def main():
     '''
         1. login
         2. select folder (AllMail)
-        3. find already `read mails' with 'Inbox' label
+        3. find `read mails' with 'Inbox' label
         4. filter mails with labels more than 1
         5. remove 'Inbox' label for that mails
     '''
     WEEK_AGO = datetime.datetime.now() - datetime.timedelta(days=7)
 
+    # args
+    filename = sys.argv[sys.argv.index('--auth')+1] if len(sys.argv) > 2 and '--auth' in sys.argv else None
+    username = sys.argv[sys.argv.index('--user')+1] if len(sys.argv) > 2 and '--user' in sys.argv else None
+
     # login
-    username = raw_input('Username: ')
-    username = username + '@gmail.com' if '@' not in username else ''
+    username = username or raw_input('Username: ')
+    username = username + '@gmail.com' if '@' not in username else username
     server = imapclient.IMAPClient('imap.gmail.com', ssl=True)
     #server.login(email, getpass.getpass('Password: ' )) # deprecated.
-    filename = sys.argv[1] if len(sys.argv) > 1 else None
     login(server, username, filename)
     print 'logged in with', username
 
@@ -158,15 +164,19 @@ def main():
 
     # filter
     msgs_with_labels = server.get_gmail_labels(msgids)
-    #labled_msgs = [msgid for (msgid, labels) in msgs_with_labels.iteritems() if len(labels) > 1]
-    labled_msgs = [msgid for (msgid, labels) in msgs_with_labels.items()[:3]]
-    print len(labled_msgs), 'labled messages'
+    labled_msgs = [msgid for (msgid, labels) in msgs_with_labels.iteritems() if len(labels) > 1]
+    #labled_msgs = [msgid for (msgid, labels) in msgs_with_labels.items()[:3]]
+    print len(labled_msgs), 'labeled messages'
 
     # print
     if len(labled_msgs) <= 30:
-        result = server.fetch(labled_msgs, ['BODY[HEADER.FIELDS (SUBJECT FROM DATE)]'])
+        #result = server.fetch(labled_msgs, ['BODY[HEADER.FIELDS (SUBJECT FROM DATE)]'])
+        fields = ['BODY[HEADER.FIELDS (SUBJECT)]', 'BODY[HEADER.FIELDS (FROM)]', 'BODY[HEADER.FIELDS (DATE)]']
+        result = server.fetch(labled_msgs, fields)
         for _id, mail in result.iteritems():
-            print_mail_info(_id, mail['BODY[HEADER.FIELDS (SUBJECT FROM DATE)]'])
+            #print_mail_info(_id, mail['BODY[HEADER.FIELDS (SUBJECT FROM DATE)]'])
+            header = '\n'.join(mail[f].strip().replace('\n', '').replace('\r', '') for f in fields)
+            print_mail_info(_id, header)
 
     ## archive
     #server.remove_gmail_labels(labled_msgs, r"\Inbox")
