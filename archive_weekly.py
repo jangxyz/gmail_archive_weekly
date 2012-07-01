@@ -9,6 +9,8 @@ import urllib
 
 import imapclient
 
+dry_run = False
+
 def print_mail_info(_id, header):
     import email
     import re
@@ -146,6 +148,7 @@ def main():
     # args
     filename = sys.argv[sys.argv.index('--auth')+1] if len(sys.argv) > 2 and '--auth' in sys.argv else None
     username = sys.argv[sys.argv.index('--user')+1] if len(sys.argv) > 2 and '--user' in sys.argv else None
+    do_archive = '--archive' in sys.argv
 
     # login
     username = username or raw_input('Username: ')
@@ -178,8 +181,9 @@ def main():
             header = '\n'.join(mail[f].strip().replace('\n', '').replace('\r', '') for f in fields)
             print_mail_info(_id, header)
 
-    ## archive
-    #server.remove_gmail_labels(labled_msgs, r"\Inbox")
+    # archive
+    if do_archive:
+        server.remove_gmail_labels(labled_msgs, r"\Inbox")
 
 
 if __name__ == '__main__':
