@@ -35,7 +35,7 @@ def print_mail_info(_id, header):
 def login(server, email, auth_file=None):
     if auth_file:
         try:
-            return login_by_oauth(server, email, auth_file)
+            return login_by_oauth(server, auth_file)
         except Exception as e:
             print 'failed loggin in by oauth:'
             print e
@@ -48,20 +48,22 @@ def login(server, email, auth_file=None):
         filename = '.oauth'
         save_oauth(email, filename)
         prog_name = sys.argv[0]
-        print 'saved to %(filename)s . run `%(prog_name)s %(filename)s` next time to login by oauth' % locals()
+        print 'saved to %(filename)s . run `%(prog_name)s --auth %(filename)s` next time to login by oauth' % locals()
         print
-        return login_by_oauth(server, email, filename)
+        return login_by_oauth(server, filename)
 
 
 def login_by_password(server, email):
     password = getpass.getpass('Password: ' )
     server.login(email, password)
     del password
+    return email
 
-def login_by_oauth(server, email, filename):
+def login_by_oauth(server, filename):
+    email, token, secret = open(filename).read().split()
     url = 'https://mail.google.com/mail/b/%s/imap/' % email
-    token, secret = open(filename).read().split()
     server.oauth_login(url, token, secret)
+    return email
 
 def save_oauth(email, filename):
     # shamelessly copied from http://google-mail-xoauth-tools.googlecode.com/svn/trunk/python/xoauth.py
@@ -127,6 +129,7 @@ def save_oauth(email, filename):
     else:
         f = open(filename, 'w')
 
+    f.write(email + "\n")
     f.write(access_token[0] + "\n")
     f.write(access_token[1])
     f.close()
@@ -148,13 +151,24 @@ def main():
     username = sys.argv[sys.argv.index('--user')+1] if len(sys.argv) > 2 and '--user' in sys.argv else None
     do_archive = '--archive' in sys.argv
     do_print   = '--print' in sys.argv
+    if '-h' in sys.argv or '--help' in sys.argv:
+        print '''Usage: %s [options]
+
+    --user USERNAME     login with this username.
+    --auth AUTHFILE     login with this oauth file.
+    --print             print subjects of target mails.
+    --archive           actually archive target mails.
+    -h|--help           display this help message and exit.
+''' % sys.argv[0]
+        sys.exit(0)
 
     # login
-    username = username or raw_input('Username: ')
-    username = username + '@gmail.com' if '@' not in username else username
+    if not filename:
+        username = username or raw_input('Username: ')
+        username = username + '@gmail.com' if '@' not in username else username
     server = imapclient.IMAPClient('imap.gmail.com', ssl=True)
     #server.login(email, getpass.getpass('Password: ' )) # deprecated.
-    login(server, username, filename)
+    username = login(server, username, filename)
     print 'logged in with', username
 
 	# list: SEEN, BEFORE "1 week ago", LABEL "Inbox"
@@ -162,7 +176,7 @@ def main():
     allmail_name = [folderinfo for folderinfo in folders if r"\AllMail" in folderinfo[0]][0][-1]
     server.select_folder(allmail_name)
     msgids = server.search(['SEEN', 'BEFORE %s' % WEEK_AGO.strftime("%d-%b-%Y"), r'X-GM-LABELS "\\Inbox"'])
-    print len(msgids), 'read messages', 'since', WEEK_AGO.strftime("%d-%b-%Y")
+    print len(msgids), 'read messages', 'before', WEEK_AGO.strftime("%d-%b-%Y")
 
 	# filter: len(LABEL) > 1
     msgs_with_labels = server.get_gmail_labels(msgids)
