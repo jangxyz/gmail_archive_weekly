@@ -1,6 +1,8 @@
 Archive Gmail weekly
 ====================
 
+A simple script to interact with gmail account. This demo _archives every read emails that are at least one week old, and have labels_.
+
 Run
 ---
 
